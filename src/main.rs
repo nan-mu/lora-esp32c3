@@ -1,16 +1,12 @@
-//! This shows how to configure UART
-//! You can short the TX and RX pin and see it reads what was written.
-//! Additionally you can connect a logic analzyer to TX and see how the changes
-//! of the configuration change the output signal.
-//!
-//! The following wiring is assumed:
-//! - TX => GPIO4
-//! - RX => GPIO5
-
-//% CHIPS: esp32 esp32c2 esp32c3 esp32c6 esp32h2 esp32s2 esp32s3
-
 #![no_std]
 #![no_main]
+
+mod command;
+use command::{match_command, Command};
+
+extern crate alloc;
+use alloc::vec::Vec;
+use core::mem::MaybeUninit;
 
 use esp_backtrace as _;
 use esp_hal::{
@@ -18,21 +14,34 @@ use esp_hal::{
     // delay::Delay,
     gpio::IO,
     peripherals::Peripherals,
-    prelude::*,
+    prelude::{nb::block, *},
     uart::{
         config::{Config, DataBits, Parity, StopBits},
         ClockSource, TxRxPins, Uart,
     },
 };
 use esp_println::{print, println};
-use nb::block;
+
+#[global_allocator]
+static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
+
+fn init_heap() {
+    const HEAP_SIZE: usize = 32 * 1024;
+    static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
+
+    unsafe {
+        ALLOCATOR.init(HEAP.as_mut_ptr() as *mut u8, HEAP_SIZE);
+    }
+}
 
 #[entry]
 fn main() -> ! {
     let peripherals = Peripherals::take();
     let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
+    init_heap();
 
+    // 初始化串口设备
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
     let pins = TxRxPins::new_tx_rx(
         io.pins.gpio0.into_push_pull_output(),
@@ -53,15 +62,32 @@ fn main() -> ! {
         None,
     );
 
-    // let delay = Delay::new(&clocks);
-
     println!("Start");
+    let mut buf = Vec::new();
     loop {
-        let read = block!(serial1.read_byte());
-        match read {
-            Ok(read) => print!("{}", read as char),
-            Err(err) => println!("Error {:?}", err),
+        match block!(serial1.read_byte()) {
+            Ok(byte) => match byte {
+                b'\n' => {
+                    match match_command(&buf) {
+                        Some(Command::Ping) => {
+                            serial1.write_bytes(b"pong").unwrap();
+                            println!("pong");
+                        }
+                        None => {
+                            println!("Unknown command");
+                        }
+                    }
+                    buf.clear();
+                }
+                b'\r' => {
+                    buf.clear();
+                }
+                _ => {
+                    print!("{}", byte as char);
+                    buf.push(byte as char);
+                }
+            },
+            Err(_) => continue,
         }
-        // delay.delay_millis(10);
     }
 }
