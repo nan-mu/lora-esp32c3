@@ -65,6 +65,7 @@ fn main() -> ! {
     println!("Start");
     let mut buf = Vec::new();
     loop {
+        // 这里遇到了一些问题，hal库中有read_byte()和drain_fifo()两个方法从串口读取数据，前者一个字符一个字符读，后者一次性读取所有数据，而后者无法正常使用，所以还是使用比较原始的方法读取
         match block!(serial1.read_byte()) {
             Ok(byte) => match byte {
                 b'\n' => {
