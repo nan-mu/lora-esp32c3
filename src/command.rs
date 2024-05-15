@@ -25,34 +25,31 @@ impl TryFrom<&str> for Command {
     type Error = CommandErr;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let mut iter = value.split(',');
-        let color = match iter.next() {
-            Some(color) => match color {
-                "red" => Ok(Rgb565::RED),
-                "green" => Ok(Rgb565::GREEN),
-                "blue" => Ok(Rgb565::BLUE),
-                _ => Err(CommandErr::FaillToParse),
-            },
-            None => Err(CommandErr::FaillToParse),
-        }?;
+        match value {
+            "ping" => Ok(Command::Ping),
+            _ => {
+                let mut iter = value.split(',');
+                let color = match iter.next() {
+                    Some(color) => match color {
+                        "red" => Ok(Rgb565::RED),
+                        "green" => Ok(Rgb565::GREEN),
+                        "blue" => Ok(Rgb565::BLUE),
+                        _ => Err(CommandErr::FaillToParse),
+                    },
+                    None => Err(CommandErr::FaillToParse),
+                }?;
 
-        let position = match iter.next() {
-            Some(position) => match position {
-                "left" => Ok(Position::Left),
-                "right" => Ok(Position::Right),
-                "middle" => Ok(Position::Middle),
-                _ => Err(CommandErr::FaillToParse),
-            },
-            None => Err(CommandErr::FaillToParse),
-        }?;
-        Ok(Command::Blink(color, position))
-    }
-}
-
-pub fn match_command(buf: &Vec<char>) -> Result<Command, CommandErr> {
-    let buf = buf.iter().collect::<String>();
-    match buf.as_str() {
-        "ping" => Ok(Command::Ping),
-        _ => Err(CommandErr::InvalidCommand),
+                let position = match iter.next() {
+                    Some(position) => match position {
+                        "left" => Ok(Position::Left),
+                        "right" => Ok(Position::Right),
+                        "middle" => Ok(Position::Middle),
+                        _ => Err(CommandErr::FaillToParse),
+                    },
+                    None => Err(CommandErr::FaillToParse),
+                }?;
+                Ok(Command::Blink(color, position))
+            }
+        }
     }
 }
