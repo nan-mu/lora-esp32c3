@@ -76,7 +76,7 @@ fn main() -> ! {
                         }
                         Ok(Command::Blink(color, position)) => {
                             println!("Blink {:?} {:?}", color, position);
-                            unimplemented!()
+                            // unimplemented!()
                         }
                         Err(e) => {
                             println!("Unknown command {:?}", e);
