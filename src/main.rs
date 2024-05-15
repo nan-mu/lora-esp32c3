@@ -2,7 +2,7 @@
 #![no_main]
 
 mod command;
-use command::{match_command, Command};
+use command::Command;
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -69,7 +69,7 @@ fn main() -> ! {
         match block!(serial1.read_byte()) {
             Ok(byte) => match byte {
                 b'\n' => {
-                    match match_command(&buf) {
+                    match Command::try_from(&buf) {
                         Ok(Command::Ping) => {
                             serial1.write_bytes(b"pong").unwrap();
                             println!("pong");

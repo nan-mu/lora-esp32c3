@@ -17,8 +17,15 @@ pub enum Position {
 
 #[derive(Debug)]
 pub enum CommandErr {
-    InvalidCommand,
     FaillToParse,
+}
+
+impl TryFrom<&Vec<char>> for Command {
+    type Error = CommandErr;
+    fn try_from(value: &Vec<char>) -> Result<Self, Self::Error> {
+        let value: String = value.iter().collect();
+        Command::try_from(value.as_str())
+    }
 }
 
 impl TryFrom<&str> for Command {
