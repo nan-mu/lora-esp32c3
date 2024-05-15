@@ -70,12 +70,16 @@ fn main() -> ! {
             Ok(byte) => match byte {
                 b'\n' => {
                     match match_command(&buf) {
-                        Some(Command::Ping) => {
+                        Ok(Command::Ping) => {
                             serial1.write_bytes(b"pong").unwrap();
                             println!("pong");
                         }
-                        None => {
-                            println!("Unknown command");
+                        Ok(Command::Blink(color, position)) => {
+                            println!("Blink {:?} {:?}", color, position);
+                            unimplemented!()
+                        }
+                        Err(e) => {
+                            println!("Unknown command {:?}", e);
                         }
                     }
                     buf.clear();

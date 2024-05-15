@@ -1,43 +1,58 @@
 use alloc::{string::String, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 
+#[derive(Debug)]
 pub enum Command {
     Ping,
     /// 前者颜色，后者指定灯的位置，(命令格式：@color,position)
     Blink(Rgb565, Position),
 }
 
+#[derive(Debug)]
 pub enum Position {
     Left,
     Right,
     Middle,
 }
 
-impl From<&str> for Command {
-    fn from(value: &str) -> Self {
+#[derive(Debug)]
+pub enum CommandErr {
+    InvalidCommand,
+    FaillToParse,
+}
+
+impl TryFrom<&str> for Command {
+    type Error = CommandErr;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
         let mut iter = value.split(',');
-        let color = iter.next().unwrap();
-        let position = iter.next().unwrap();
-        let color = match color {
-            "red" => Rgb565::RED,
-            "green" => Rgb565::GREEN,
-            "blue" => Rgb565::BLUE,
-            _ => Rgb565::BLACK,
-        };
-        let position = match position {
-            "left" => Position::Left,
-            "right" => Position::Right,
-            "middle" => Position::Middle,
-            _ => Position::Middle,
-        };
-        Command::Blink(color, position)
+        let color = match iter.next() {
+            Some(color) => match color {
+                "red" => Ok(Rgb565::RED),
+                "green" => Ok(Rgb565::GREEN),
+                "blue" => Ok(Rgb565::BLUE),
+                _ => Err(CommandErr::FaillToParse),
+            },
+            None => Err(CommandErr::FaillToParse),
+        }?;
+
+        let position = match iter.next() {
+            Some(position) => match position {
+                "left" => Ok(Position::Left),
+                "right" => Ok(Position::Right),
+                "middle" => Ok(Position::Middle),
+                _ => Err(CommandErr::FaillToParse),
+            },
+            None => Err(CommandErr::FaillToParse),
+        }?;
+        Ok(Command::Blink(color, position))
     }
 }
 
-pub fn match_command(buf: &Vec<char>) -> Option<Command> {
+pub fn match_command(buf: &Vec<char>) -> Result<Command, CommandErr> {
     let buf = buf.iter().collect::<String>();
     match buf.as_str() {
-        "ping" => Some(Command::Ping),
-        _ => None,
+        "ping" => Ok(Command::Ping),
+        _ => Err(CommandErr::InvalidCommand),
     }
 }
