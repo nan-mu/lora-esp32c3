@@ -1,12 +1,22 @@
-use alloc::{string::String, vec::Vec};
+use core::cell::RefCell;
+
+use alloc::{collections::VecDeque, string::String, vec::Vec};
+use critical_section::Mutex;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
+
+pub static COMMAND_BUCKET: Mutex<RefCell<Option<VecDeque<Command>>>> =
+    Mutex::new(RefCell::new(None));
+pub static DELAY_BUCKET: Mutex<RefCell<Option<VecDeque<usize>>>> = Mutex::new(RefCell::new(None));
 
 #[derive(Debug)]
 pub enum Command {
     Ping,
     /// 前者颜色，后者指定灯的位置，(命令格式：@color,position)
     Blink(Rgb565, Position),
+    /// 命令格式：#color,position,time
     DelayBlink(Rgb565, Position, usize),
+    /// 重新初始化屏幕
+    Reload,
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +51,13 @@ impl TryFrom<&str> for Command {
             "p" => {
                 if value == "ping" {
                     Ok(Command::Ping)
+                } else {
+                    Err(CommandErr::InvalidString)
+                }
+            }
+            "r" => {
+                if value == "reload" {
+                    Ok(Command::Reload)
                 } else {
                     Err(CommandErr::InvalidString)
                 }

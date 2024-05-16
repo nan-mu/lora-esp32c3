@@ -4,32 +4,31 @@
 mod command;
 mod screen;
 mod time;
-use command::Command;
 
 extern crate alloc;
-use alloc::{borrow::ToOwned, collections::VecDeque, format, string::ToString, vec::Vec};
-use core::{cell::RefCell, mem::MaybeUninit};
-use critical_section::Mutex;
-use embedded_hal_bus::spi::ExclusiveDevice;
 
+use alloc::{borrow::ToOwned, collections::VecDeque, format, string::ToString, vec::Vec};
+use command::Command;
+use core::mem::MaybeUninit;
+use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_backtrace as _;
 use esp_hal::{
     clock::ClockControl,
     delay::Delay,
     gpio::{self, IO},
     interrupt::{self, Priority},
-    peripherals::{self, Interrupt, Peripherals, TIMG0},
+    peripherals::{Interrupt, Peripherals},
     prelude::{nb::block, *},
-    spi::{self, master::Spi},
-    timer::{Timer, Timer0, TimerGroup, TimerInterrupts},
+    spi::master::Spi,
+    systimer::SystemTimer,
+    timer::{TimerGroup, TimerInterrupts},
     uart::{
         config::{Config, DataBits, Parity, StopBits},
         ClockSource, TxRxPins, Uart,
     },
 };
 use esp_println::println;
-
-use crate::{screen::改变灯的颜色, time::tg0_t0_level};
+use fugit::ExtU32;
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -43,52 +42,59 @@ fn init_heap() {
     }
 }
 
-pub static mut ST7735: MaybeUninit<
-    st7735_lcd::ST7735<
-        ExclusiveDevice<
-            Spi<'static, peripherals::SPI2, spi::FullDuplexMode>,
-            gpio::GpioPin<gpio::Output<gpio::PushPull>, 7>,
-            Delay,
-        >,
-        gpio::GpioPin<gpio::Output<gpio::PushPull>, 6>,
-        gpio::GpioPin<gpio::Output<gpio::PushPull>, 10>,
-    >,
-> = MaybeUninit::uninit();
-
-pub static TIMER0: Mutex<RefCell<Option<Timer<Timer0<TIMG0>, esp_hal::Blocking>>>> =
-    Mutex::new(RefCell::new(None));
-
-pub static COMMAND_BUCKET: Mutex<RefCell<Option<VecDeque<Command>>>> =
-    Mutex::new(RefCell::new(None));
-pub static DELAY_BUCKET: Mutex<RefCell<Option<VecDeque<usize>>>> = Mutex::new(RefCell::new(None));
-
 #[entry]
 fn main() -> ! {
     let peripherals = Peripherals::take();
     let system = peripherals.SYSTEM.split();
+    let systimer = SystemTimer::new(peripherals.SYSTIMER);
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
-    init_heap();
     let mut delay = Delay::new(&clocks);
+    init_heap();
 
-    // 初始化时钟中断
+    // 初始化时钟
     let timg0 = TimerGroup::new(
         peripherals.TIMG0,
         &clocks,
         Some(TimerInterrupts {
-            timer0_t0: Some(tg0_t0_level),
+            timer0_t0: Some(time::tg0_t0_level),
             ..Default::default()
         }),
     );
-    let timer0 = timg0.timer0;
+    let mut timer0 = timg0.timer0;
+    timer0.start(1000u64.millis());
+    timer0.listen();
 
-    interrupt::enable(Interrupt::TG0_T0_LEVEL, Priority::Priority1).unwrap();
+    // 初始化系统时间闹钟
+    let mut alarm0 = systimer.alarm0.into_periodic();
+    alarm0.set_interrupt_handler(time::systimer_target0);
 
     critical_section::with(|cs| {
-        TIMER0.borrow_ref_mut(cs).replace(timer0);
+        time::TIMER0.borrow_ref_mut(cs).replace(timer0);
+
         // 顺便初始化用于延时命令的两个栈
-        COMMAND_BUCKET.borrow_ref_mut(cs).replace(VecDeque::new());
-        DELAY_BUCKET.borrow_ref_mut(cs).replace(VecDeque::new());
+        command::COMMAND_BUCKET
+            .borrow_ref_mut(cs)
+            .replace(VecDeque::new());
+        command::DELAY_BUCKET
+            .borrow_ref_mut(cs)
+            .replace(VecDeque::new());
+
+        // 初始化系统时间的闹钟
+        time::ALARM0.borrow_ref_mut(cs).replace(alarm0);
     });
+
+    interrupt::enable(Interrupt::SYSTIMER_TARGET0, Priority::Priority1).unwrap();
+    interrupt::enable(Interrupt::TG0_T0_LEVEL, Priority::Priority1).unwrap();
+
+    // 初始化时间
+    // 加载时间必须要在刷新屏幕之前，屏幕刷新太耗时了
+    // 时间格式1996-12-19T16:39:57-08:00
+    let now: &[u8] = include_bytes!("../assets/time.bin");
+    log::info!("解析时间： {:?}", now);
+    unsafe {
+        time::NOW.build(now);
+        log::info!("运行时获得时间： {}", time::NOW);
+    }
 
     // 初始化串口设备
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
@@ -129,12 +135,13 @@ fn main() -> ! {
 
     // 其实这里不使用critical_section而是直接unsafe是因为懒得改了，实际不应该这样
     unsafe {
-        use crate::screen::{屏幕初始化, 绘制边框};
+        use screen::{屏幕初始化, 绘制数字, 绘制边框, ST7735};
         ST7735
             .as_mut_ptr()
             .write(st7735_lcd::ST7735::new(spi, dc, res, false, true, 110, 161));
         屏幕初始化(&mut *ST7735.as_mut_ptr(), &mut delay);
         绘制边框(&mut *ST7735.as_mut_ptr());
+        绘制数字(&mut *ST7735.as_mut_ptr());
     }
 
     println!("drew down");
@@ -152,14 +159,19 @@ fn main() -> ! {
                             serial1.write_bytes(b"pong").unwrap();
                             println!("pong");
                         }
+                        Ok(Command::Reload) => unsafe {
+                            use screen::{屏幕初始化, 绘制边框, ST7735};
+                            屏幕初始化(&mut *ST7735.as_mut_ptr(), &mut delay);
+                            绘制边框(&mut *ST7735.as_mut_ptr());
+                        },
                         Ok(Command::Blink(color, position)) => {
                             println!("Blink {:?} {:?}", color, position);
-                            改变灯的颜色(&command.unwrap());
+                            screen::改变灯的颜色(&command.unwrap());
                         }
                         Ok(Command::DelayBlink(color, position, delay)) => {
                             println!("DelayBlink {:?} {:?} {:?}", color, position, delay);
                             critical_section::with(|cs| {
-                                COMMAND_BUCKET
+                                command::COMMAND_BUCKET
                                     .borrow_ref_mut(cs)
                                     .as_mut()
                                     .unwrap()
@@ -168,19 +180,19 @@ fn main() -> ! {
                                         position.to_owned(),
                                     ));
 
-                                DELAY_BUCKET
-                                    .borrow_ref_mut(cs)
-                                    .as_mut()
-                                    .unwrap()
-                                    .push_back(delay.clone());
+                                let mut delay_bucket = command::DELAY_BUCKET.borrow_ref_mut(cs);
+                                let delay_bucket = delay_bucket.as_mut().unwrap();
+                                delay_bucket.push_back(delay.clone());
 
-                                let mut time0 = TIMER0.borrow_ref_mut(cs);
-                                let time0 = time0.as_mut().unwrap();
+                                let mut alarm0 = time::ALARM0.borrow_ref_mut(cs);
+                                let alarm0 = alarm0.as_mut().unwrap();
 
-                                if !time0.is_alarm_active() {
+                                if delay_bucket.len() == 1 {
                                     println!("计时器启动");
-                                    time0.start((delay.clone() as u64).secs());
-                                    time0.listen();
+                                    alarm0.set_period(
+                                        (delay_bucket.front().unwrap().clone() as u32).secs(),
+                                    );
+                                    alarm0.enable_interrupt(true);
                                 }
                             });
                         }
@@ -190,6 +202,7 @@ fn main() -> ! {
                                     &format!("Unknown command {:?}", e).to_string().into_bytes(),
                                 )
                                 .unwrap();
+                            screen::出问题了(&format!("Unknown command {:?}", e).to_string());
                             println!("Unknown command {:?}", e);
                         }
                     }
