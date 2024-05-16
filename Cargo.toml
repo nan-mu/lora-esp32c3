@@ -6,13 +6,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-esp-hal = { version = "0.17.0", features = [
-    "esp32c3",
-    "async",
-    "embassy",
-    "embassy-time-timg0",
-    # "embassy-generic-timers",
-] }
+esp-hal = { version = "0.17.0", features = ["esp32c3"] }
 esp-backtrace = { version = "0.11.0", features = [
     "esp32c3",
     "exception-handler",
@@ -27,10 +21,7 @@ st7735-lcd = "0.10.0"
 embedded-graphics = "0.8.1"
 critical-section = "1.1.2"
 embedded-hal = "1.0.0"
-embassy-executor = "0.5.0"
-embassy-sync = "0.5.0"
 static_cell = "2.1.0"
-embedded-io-async = "0.6.1"
 embedded-io = "0.6.1"
 [profile.dev]
 # Rust debug is too slow. 
@@ -45,3 +36,6 @@ incremental = false
 lto = 'fat'
 opt-level = 's'
 overflow-checks = false
+
+[build-dependencies]
+chrono = "0.4.38"
