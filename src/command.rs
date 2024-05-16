@@ -6,10 +6,10 @@ pub enum Command {
     Ping,
     /// 前者颜色，后者指定灯的位置，(命令格式：@color,position)
     Blink(Rgb565, Position),
-    DelayBlink(Rgb565, Position, u32),
+    DelayBlink(Rgb565, Position, usize),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Position {
     Left,
     Right,
@@ -43,7 +43,7 @@ impl TryFrom<&str> for Command {
                 }
             }
             "@" => {
-                let mut iter = value.split(',');
+                let mut iter = value[1..].split(',');
                 let color = match iter.next() {
                     Some(color) => match color {
                         "red" => Ok(Rgb565::RED),
@@ -65,7 +65,37 @@ impl TryFrom<&str> for Command {
                 }?;
                 Ok(Command::Blink(color, position))
             }
+            "#" => {
+                let mut iter = value[1..].split(',');
+                let color = match iter.next() {
+                    Some(color) => match color {
+                        "red" => Ok(Rgb565::RED),
+                        "green" => Ok(Rgb565::GREEN),
+                        "blue" => Ok(Rgb565::BLUE),
+                        _ => Err(CommandErr::FaillToParse),
+                    },
+                    None => Err(CommandErr::FaillToParse),
+                }?;
 
+                let position = match iter.next() {
+                    Some(position) => match position {
+                        "left" => Ok(Position::Left),
+                        "right" => Ok(Position::Right),
+                        "middle" => Ok(Position::Middle),
+                        _ => Err(CommandErr::FaillToParse),
+                    },
+                    None => Err(CommandErr::FaillToParse),
+                }?;
+
+                let delay = match iter.next() {
+                    Some(delay) => match delay.parse::<u32>() {
+                        Ok(delay) => Ok(delay),
+                        Err(_) => Err(CommandErr::FaillToParse),
+                    },
+                    None => Err(CommandErr::FaillToParse),
+                }?;
+                Ok(Command::DelayBlink(color, position, delay as usize))
+            }
             _ => Err(CommandErr::InvalidString),
         }
     }

@@ -1,3 +1,4 @@
+use alloc::borrow::ToOwned;
 use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::PrimitiveStyleBuilder;
 use embedded_graphics::{pixelcolor::Rgb565, primitives::Circle};
@@ -56,7 +57,7 @@ where
     }
 }
 
-pub fn 改变灯的颜色(command: Command) {
+pub fn 改变灯的颜色(command: &Command) {
     unsafe {
         use crate::ST7735;
         let device = &mut *ST7735.as_mut_ptr();
@@ -72,7 +73,9 @@ pub fn 改变灯的颜色(command: Command) {
                 ),
                 20,
             );
-            let style = PrimitiveStyleBuilder::new().fill_color(color).build();
+            let style = PrimitiveStyleBuilder::new()
+                .fill_color(color.to_owned())
+                .build();
             println!("{:?}", circle);
             circle.into_styled(style).draw(device).unwrap();
         } else {

@@ -7,7 +7,7 @@ mod time;
 use command::Command;
 
 extern crate alloc;
-use alloc::vec::Vec;
+use alloc::{borrow::ToOwned, vec::Vec};
 use core::{cell::RefCell, mem::MaybeUninit};
 use critical_section::Mutex;
 use embedded_hal_bus::spi::ExclusiveDevice;
@@ -58,6 +58,9 @@ pub static mut ST7735: MaybeUninit<
 pub static TIMER0: Mutex<RefCell<Option<Timer<Timer0<TIMG0>, esp_hal::Blocking>>>> =
     Mutex::new(RefCell::new(None));
 
+pub static HANDLER_COMMAND: Mutex<RefCell<Option<Vec<(Command, usize)>>>> =
+    Mutex::new(RefCell::new(None));
+
 #[entry]
 fn main() -> ! {
     let peripherals = Peripherals::take();
@@ -75,11 +78,11 @@ fn main() -> ! {
             ..Default::default()
         }),
     );
-    let mut timer0 = timg0.timer0;
+    let timer0 = timg0.timer0;
 
     interrupt::enable(Interrupt::TG0_T0_LEVEL, Priority::Priority1).unwrap();
-    timer0.start(500u64.millis());
-    timer0.listen();
+    // timer0.start(1000u64.millis());
+    // timer0.listen();
 
     critical_section::with(|cs| {
         TIMER0.borrow_ref_mut(cs).replace(timer0);
@@ -122,6 +125,7 @@ fn main() -> ! {
     .with_pins(Some(sck), Some(sda), gpio::NO_PIN, gpio::NO_PIN);
     let spi = ExclusiveDevice::new(spi, cs, delay).unwrap();
 
+    // 其实这里不使用critical_section而是直接unsafe是因为懒得改了，实际不应该这样
     unsafe {
         use crate::screen::{屏幕初始化, 绘制边框};
         ST7735
@@ -148,7 +152,18 @@ fn main() -> ! {
                         }
                         Ok(Command::Blink(color, position)) => {
                             println!("Blink {:?} {:?}", color, position);
-                            改变灯的颜色(command.unwrap());
+                            改变灯的颜色(&command.unwrap());
+                        }
+                        Ok(Command::DelayBlink(color, position, delay)) => {
+                            println!("DelayBlink {:?} {:?} {:?}", color, position, delay);
+                            critical_section::with(|cs| {
+                                let mut command_bucket = HANDLER_COMMAND.borrow_ref_mut(cs);
+                                let command_bucket = command_bucket.as_mut().unwrap();
+                                command_bucket.push((
+                                    Command::Blink(color.to_owned(), position.to_owned()),
+                                    *delay,
+                                ));
+                            });
                         }
                         Err(e) => {
                             println!("Unknown command {:?}", e);
