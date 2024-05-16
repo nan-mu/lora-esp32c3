@@ -1,6 +1,5 @@
-use core::cell::RefCell;
-
 use alloc::{collections::VecDeque, string::String, vec::Vec};
+use core::cell::RefCell;
 use critical_section::Mutex;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 

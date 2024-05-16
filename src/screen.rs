@@ -2,13 +2,17 @@ use crate::time::UpdateIndex;
 use crate::{command::Command, time::NOW};
 use alloc::borrow::ToOwned;
 use core::mem::MaybeUninit;
-use embedded_graphics::mono_font::ascii::FONT_6X10;
-use embedded_graphics::mono_font::ascii::FONT_7X14;
-use embedded_graphics::mono_font::MonoTextStyle;
-use embedded_graphics::prelude::*;
-use embedded_graphics::primitives::{PrimitiveStyle, PrimitiveStyleBuilder};
-use embedded_graphics::text::Text;
-use embedded_graphics::{pixelcolor::Rgb565, primitives::Circle};
+use embedded_graphics::{
+    mono_font::{
+        ascii::{FONT_6X10, FONT_7X14},
+        MonoTextStyle,
+    },
+    pixelcolor::Rgb565,
+    prelude::*,
+    primitives::Circle,
+    primitives::{PrimitiveStyle, PrimitiveStyleBuilder},
+    text::Text,
+};
 use embedded_hal::digital::OutputPin;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::{
