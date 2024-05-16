@@ -1,27 +1,41 @@
-use crate::{screen::改变灯的颜色, HANDLER_COMMAND, TIMER0};
+use crate::{screen::改变灯的颜色, COMMAND_BUCKET, DELAY_BUCKET, TIMER0};
 use esp_hal::prelude::*;
 use esp_println::println;
 
 #[handler]
 pub fn tg0_t0_level() {
+    println!("触发时间中断");
     critical_section::with(|cs| {
         let mut timer0 = TIMER0.borrow_ref_mut(cs);
         let timer0 = timer0.as_mut().unwrap();
-        let mut command_bucket = HANDLER_COMMAND.borrow_ref_mut(cs);
-        let command_bucket = command_bucket.as_mut().unwrap();
 
-        // for (command, count_time) in command_bucket.iter_mut() {
-        //     println!("延时执行指令{:?}在{}秒", command, count_time);
-        //     *count_time -= 1;
-        //     if *count_time == 0 {
-        //         println!("执行指令{:?}", command);
-        //         改变灯的颜色(command);
-        //     }
-        // }
+        println!(
+            "COMMAND_BUCKET: {:?}",
+            COMMAND_BUCKET.borrow_ref(cs).as_ref().unwrap()
+        );
 
-        let (command, delay) = command_bucket.pop().unwrap();
-        改变灯的颜色(&command);
+        println!(
+            "DELAY_BUCKET: {:?}",
+            DELAY_BUCKET.borrow_ref(cs).as_ref().unwrap()
+        );
+
+        改变灯的颜色(
+            &COMMAND_BUCKET
+                .borrow_ref_mut(cs)
+                .as_mut()
+                .unwrap()
+                .pop_front()
+                .unwrap(),
+        );
+
+        let mut delay_bucket = DELAY_BUCKET.borrow_ref_mut(cs);
+        let delay_bucket = delay_bucket.as_mut().unwrap();
+        delay_bucket.pop_front().unwrap();
+
         timer0.clear_interrupt();
-        timer0.start((delay as u64).millis());
+
+        if let Some(delay) = delay_bucket.front() {
+            timer0.start((delay.clone() as u64).secs());
+        }
     });
 }

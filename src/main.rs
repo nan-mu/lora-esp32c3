@@ -7,7 +7,7 @@ mod time;
 use command::Command;
 
 extern crate alloc;
-use alloc::{borrow::ToOwned, vec::Vec};
+use alloc::{borrow::ToOwned, collections::VecDeque, format, string::ToString, vec::Vec};
 use core::{cell::RefCell, mem::MaybeUninit};
 use critical_section::Mutex;
 use embedded_hal_bus::spi::ExclusiveDevice;
@@ -27,7 +27,7 @@ use esp_hal::{
         ClockSource, TxRxPins, Uart,
     },
 };
-use esp_println::{print, println};
+use esp_println::println;
 
 use crate::{screen::改变灯的颜色, time::tg0_t0_level};
 
@@ -58,8 +58,9 @@ pub static mut ST7735: MaybeUninit<
 pub static TIMER0: Mutex<RefCell<Option<Timer<Timer0<TIMG0>, esp_hal::Blocking>>>> =
     Mutex::new(RefCell::new(None));
 
-pub static HANDLER_COMMAND: Mutex<RefCell<Option<Vec<(Command, usize)>>>> =
+pub static COMMAND_BUCKET: Mutex<RefCell<Option<VecDeque<Command>>>> =
     Mutex::new(RefCell::new(None));
+pub static DELAY_BUCKET: Mutex<RefCell<Option<VecDeque<usize>>>> = Mutex::new(RefCell::new(None));
 
 #[entry]
 fn main() -> ! {
@@ -81,11 +82,12 @@ fn main() -> ! {
     let timer0 = timg0.timer0;
 
     interrupt::enable(Interrupt::TG0_T0_LEVEL, Priority::Priority1).unwrap();
-    // timer0.start(1000u64.millis());
-    // timer0.listen();
 
     critical_section::with(|cs| {
         TIMER0.borrow_ref_mut(cs).replace(timer0);
+        // 顺便初始化用于延时命令的两个栈
+        COMMAND_BUCKET.borrow_ref_mut(cs).replace(VecDeque::new());
+        DELAY_BUCKET.borrow_ref_mut(cs).replace(VecDeque::new());
     });
 
     // 初始化串口设备
@@ -157,15 +159,37 @@ fn main() -> ! {
                         Ok(Command::DelayBlink(color, position, delay)) => {
                             println!("DelayBlink {:?} {:?} {:?}", color, position, delay);
                             critical_section::with(|cs| {
-                                let mut command_bucket = HANDLER_COMMAND.borrow_ref_mut(cs);
-                                let command_bucket = command_bucket.as_mut().unwrap();
-                                command_bucket.push((
-                                    Command::Blink(color.to_owned(), position.to_owned()),
-                                    *delay,
-                                ));
+                                COMMAND_BUCKET
+                                    .borrow_ref_mut(cs)
+                                    .as_mut()
+                                    .unwrap()
+                                    .push_back(Command::Blink(
+                                        color.to_owned(),
+                                        position.to_owned(),
+                                    ));
+
+                                DELAY_BUCKET
+                                    .borrow_ref_mut(cs)
+                                    .as_mut()
+                                    .unwrap()
+                                    .push_back(delay.clone());
+
+                                let mut time0 = TIMER0.borrow_ref_mut(cs);
+                                let time0 = time0.as_mut().unwrap();
+
+                                if !time0.is_alarm_active() {
+                                    println!("计时器启动");
+                                    time0.start((delay.clone() as u64).secs());
+                                    time0.listen();
+                                }
                             });
                         }
                         Err(e) => {
+                            serial1
+                                .write_bytes(
+                                    &format!("Unknown command {:?}", e).to_string().into_bytes(),
+                                )
+                                .unwrap();
                             println!("Unknown command {:?}", e);
                         }
                     }
@@ -175,7 +199,6 @@ fn main() -> ! {
                     buf.clear();
                 }
                 _ => {
-                    print!("{}", byte as char);
                     buf.push(byte as char);
                 }
             },

@@ -34,6 +34,9 @@ impl TryFrom<&str> for Command {
     type Error = CommandErr;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.len() < 1 {
+            return Err(CommandErr::InvalidString);
+        }
         match &value[..1] {
             "p" => {
                 if value == "ping" {
