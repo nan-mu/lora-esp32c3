@@ -5,18 +5,17 @@ use critical_section::Mutex;
 use esp_hal::{
     peripherals::TIMG0,
     prelude::*,
-    systimer::{Alarm, Periodic},
+    systimer::{Alarm, SystemTimer, Target},
     timer::{Timer, Timer0},
     Blocking,
 };
 use esp_println::println;
-use fugit::ExtU32;
 
 /// 服务延时命令的任务
-pub static ALARM0: Mutex<RefCell<Option<Alarm<Periodic, Blocking, 0>>>> =
+pub static ALARM0: Mutex<RefCell<Option<Alarm<Target, Blocking, 0>>>> =
     Mutex::new(RefCell::new(None));
 
-#[handler(priority = esp_hal::interrupt::Priority::min())]
+#[handler(priority = esp_hal::interrupt::Priority::Priority1)]
 pub fn systimer_target0() {
     println!("触发时间中断");
     critical_section::with(|cs| {
@@ -49,7 +48,9 @@ pub fn systimer_target0() {
         alarm0.clear_interrupt();
 
         if let Some(delay) = delay_bucket.front() {
-            alarm0.set_period((delay.clone() as u32).secs());
+            alarm0.set_target(
+                SystemTimer::now() + (SystemTimer::TICKS_PER_SECOND * (delay.clone() as u64)),
+            );
         }
     });
 }

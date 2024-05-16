@@ -21,12 +21,8 @@ st7735-lcd = "0.10.0"
 embedded-graphics = "0.8.1"
 critical-section = "1.1.2"
 embedded-hal = "1.0.0"
-embassy-executor = "0.5.0"
-embassy-sync = "0.5.0"
 static_cell = "2.1.0"
-embedded-io-async = "0.6.1"
 embedded-io = "0.6.1"
-fugit = "0.3.7"
 [profile.dev]
 # Rust debug is too slow. 
 # For debug builds always builds with some optimization

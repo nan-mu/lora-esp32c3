@@ -28,7 +28,6 @@ use esp_hal::{
     },
 };
 use esp_println::println;
-use fugit::ExtU32;
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -65,7 +64,7 @@ fn main() -> ! {
     timer0.listen();
 
     // 初始化系统时间闹钟
-    let mut alarm0 = systimer.alarm0.into_periodic();
+    let mut alarm0 = systimer.alarm0;
     alarm0.set_interrupt_handler(time::systimer_target0);
 
     critical_section::with(|cs| {
@@ -189,8 +188,13 @@ fn main() -> ! {
 
                                 if delay_bucket.len() == 1 {
                                     println!("计时器启动");
-                                    alarm0.set_period(
-                                        (delay_bucket.front().unwrap().clone() as u32).secs(),
+                                    // alarm0.set_period(
+                                    //     (delay_bucket.front().unwrap().clone() as u32).secs(),
+                                    // );
+                                    alarm0.set_target(
+                                        SystemTimer::now()
+                                            + (SystemTimer::TICKS_PER_SECOND
+                                                * (delay_bucket.front().unwrap().clone() as u64)),
                                     );
                                     alarm0.enable_interrupt(true);
                                 }
