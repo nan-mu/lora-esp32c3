@@ -6,13 +6,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-esp-hal = { version = "0.17.0", features = [
-    "esp32c3",
-    "async",
-    "embassy",
-    "embassy-time-timg0",
-    # "embassy-generic-timers",
-] }
+esp-hal = { version = "0.17.0", features = ["esp32c3"] }
 esp-backtrace = { version = "0.11.0", features = [
     "esp32c3",
     "exception-handler",

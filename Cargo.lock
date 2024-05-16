@@ -155,12 +155,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "embassy-futures"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f878075b9794c1e4ac788c95b728f26aa6366d32eeb10c7051389f898f7d067"
-
-[[package]]
 name = "embassy-sync"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -171,15 +165,6 @@ dependencies = [
  "embedded-io-async",
  "futures-util",
  "heapless",
-]
-
-[[package]]
-name = "embassy-time-driver"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e0c214077aaa9206958b16411c157961fb7990d4ea628120a78d1a5a28aed24"
-dependencies = [
- "document-features",
 ]
 
 [[package]]
@@ -228,15 +213,6 @@ name = "embedded-hal"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "361a90feb7004eca4019fb28352a9465666b24f840f5c3cddf0ff13920590b89"
-
-[[package]]
-name = "embedded-hal-async"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c4c685bbef7fe13c3c6dd4da26841ed3980ef33e841cddfa15ce8a8fb3f1884"
-dependencies = [
- "embedded-hal",
-]
 
 [[package]]
 name = "embedded-hal-bus"
@@ -355,16 +331,10 @@ dependencies = [
  "cfg-if",
  "critical-section",
  "document-features",
- "embassy-futures",
- "embassy-sync",
- "embassy-time-driver",
  "embedded-can",
  "embedded-dma",
  "embedded-hal",
- "embedded-hal-async",
  "embedded-hal-nb",
- "embedded-io",
- "embedded-io-async",
  "enumset",
  "esp-build",
  "esp-hal-procmacros",

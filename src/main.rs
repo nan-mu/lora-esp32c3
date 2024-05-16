@@ -2,25 +2,34 @@
 #![no_main]
 
 mod command;
+mod screen;
+mod time;
 use command::Command;
 
 extern crate alloc;
 use alloc::vec::Vec;
-use core::mem::MaybeUninit;
+use core::{cell::RefCell, mem::MaybeUninit};
+use critical_section::Mutex;
+use embedded_hal_bus::spi::ExclusiveDevice;
 
 use esp_backtrace as _;
 use esp_hal::{
     clock::ClockControl,
-    // delay::Delay,
-    gpio::IO,
-    peripherals::Peripherals,
+    delay::Delay,
+    gpio::{self, IO},
+    interrupt::{self, Priority},
+    peripherals::{self, Interrupt, Peripherals, TIMG0},
     prelude::{nb::block, *},
+    spi::{self, master::Spi},
+    timer::{Timer, Timer0, TimerGroup, TimerInterrupts},
     uart::{
         config::{Config, DataBits, Parity, StopBits},
         ClockSource, TxRxPins, Uart,
     },
 };
 use esp_println::{print, println};
+
+use crate::{screen::改变灯的颜色, time::tg0_t0_level};
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
@@ -34,12 +43,47 @@ fn init_heap() {
     }
 }
 
+pub static mut ST7735: MaybeUninit<
+    st7735_lcd::ST7735<
+        ExclusiveDevice<
+            Spi<'static, peripherals::SPI2, spi::FullDuplexMode>,
+            gpio::GpioPin<gpio::Output<gpio::PushPull>, 7>,
+            Delay,
+        >,
+        gpio::GpioPin<gpio::Output<gpio::PushPull>, 6>,
+        gpio::GpioPin<gpio::Output<gpio::PushPull>, 10>,
+    >,
+> = MaybeUninit::uninit();
+
+pub static TIMER0: Mutex<RefCell<Option<Timer<Timer0<TIMG0>, esp_hal::Blocking>>>> =
+    Mutex::new(RefCell::new(None));
+
 #[entry]
 fn main() -> ! {
     let peripherals = Peripherals::take();
     let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
     init_heap();
+    let mut delay = Delay::new(&clocks);
+
+    // 初始化时钟中断
+    let timg0 = TimerGroup::new(
+        peripherals.TIMG0,
+        &clocks,
+        Some(TimerInterrupts {
+            timer0_t0: Some(tg0_t0_level),
+            ..Default::default()
+        }),
+    );
+    let mut timer0 = timg0.timer0;
+
+    interrupt::enable(Interrupt::TG0_T0_LEVEL, Priority::Priority1).unwrap();
+    timer0.start(500u64.millis());
+    timer0.listen();
+
+    critical_section::with(|cs| {
+        TIMER0.borrow_ref_mut(cs).replace(timer0);
+    });
 
     // 初始化串口设备
     let io = IO::new(peripherals.GPIO, peripherals.IO_MUX);
@@ -62,6 +106,33 @@ fn main() -> ! {
         None,
     );
 
+    // 初始化屏幕
+    // SCK->2 SDA->3 RES->10 DC->6 CS->7
+    let sck = io.pins.gpio2;
+    let sda = io.pins.gpio3;
+    let res = io.pins.gpio10.into_push_pull_output();
+    let dc = io.pins.gpio6.into_push_pull_output();
+    let cs = io.pins.gpio7.into_push_pull_output();
+    let spi = Spi::new(
+        peripherals.SPI2,
+        1000u32.kHz(),
+        esp_hal::spi::SpiMode::Mode0,
+        &clocks,
+    )
+    .with_pins(Some(sck), Some(sda), gpio::NO_PIN, gpio::NO_PIN);
+    let spi = ExclusiveDevice::new(spi, cs, delay).unwrap();
+
+    unsafe {
+        use crate::screen::{屏幕初始化, 绘制边框};
+        ST7735
+            .as_mut_ptr()
+            .write(st7735_lcd::ST7735::new(spi, dc, res, false, true, 110, 161));
+        屏幕初始化(&mut *ST7735.as_mut_ptr(), &mut delay);
+        绘制边框(&mut *ST7735.as_mut_ptr());
+    }
+
+    println!("drew down");
+
     println!("Start");
     let mut buf = Vec::new();
     loop {
@@ -69,14 +140,15 @@ fn main() -> ! {
         match block!(serial1.read_byte()) {
             Ok(byte) => match byte {
                 b'\n' => {
-                    match Command::try_from(&buf) {
+                    let command = Command::try_from(&buf);
+                    match &command {
                         Ok(Command::Ping) => {
                             serial1.write_bytes(b"pong").unwrap();
                             println!("pong");
                         }
                         Ok(Command::Blink(color, position)) => {
                             println!("Blink {:?} {:?}", color, position);
-                            // unimplemented!()
+                            改变灯的颜色(command.unwrap());
                         }
                         Err(e) => {
                             println!("Unknown command {:?}", e);
