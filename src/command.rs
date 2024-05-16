@@ -6,6 +6,7 @@ pub enum Command {
     Ping,
     /// 前者颜色，后者指定灯的位置，(命令格式：@color,position)
     Blink(Rgb565, Position),
+    DelayBlink(Rgb565, Position, u32),
 }
 
 #[derive(Debug)]
@@ -18,6 +19,7 @@ pub enum Position {
 #[derive(Debug)]
 pub enum CommandErr {
     FaillToParse,
+    InvalidString,
 }
 
 impl TryFrom<&Vec<char>> for Command {
@@ -32,9 +34,15 @@ impl TryFrom<&str> for Command {
     type Error = CommandErr;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "ping" => Ok(Command::Ping),
-            _ => {
+        match &value[..1] {
+            "p" => {
+                if value == "ping" {
+                    Ok(Command::Ping)
+                } else {
+                    Err(CommandErr::InvalidString)
+                }
+            }
+            "@" => {
                 let mut iter = value.split(',');
                 let color = match iter.next() {
                     Some(color) => match color {
@@ -57,6 +65,8 @@ impl TryFrom<&str> for Command {
                 }?;
                 Ok(Command::Blink(color, position))
             }
+
+            _ => Err(CommandErr::InvalidString),
         }
     }
 }
